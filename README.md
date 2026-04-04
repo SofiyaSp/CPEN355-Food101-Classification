@@ -1,7 +1,7 @@
 # CPEN 355 Final Project: Food-101 Image Classification
 
 ## Team Members
-- Jazia Azreen (90739129)
+- Jasia Azreen (90739129)
 - John Song (12837472)
 - Sofiya Spolitak (69202497)
 
