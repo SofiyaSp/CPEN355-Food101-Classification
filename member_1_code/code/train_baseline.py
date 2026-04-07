@@ -51,8 +51,11 @@ class BaselineTrainer:
             correct += predicted.eq(labels).sum().item() # Compare the predicted classes with the true labels and count how many predictions are correct.
             total += labels.size(0)
             
-            # Update the progress bar with the current average loss and accuracy for the epoch. 
-            pbar.set_postfix({'loss': total_loss / (total + 1), 'acc': correct / total})
+            # Update the progress bar with the current average loss and accuracy for the epoch.
+            pbar.set_postfix({
+                'loss': total_loss / len(pbar),
+                'acc': correct / total if total > 0 else 0.0
+            })
         
         avg_loss = total_loss / len(train_loader)
         accuracy = correct / total
@@ -80,7 +83,10 @@ class BaselineTrainer:
                 correct += predicted.eq(labels).sum().item()
                 total += labels.size(0)
                 
-                pbar.set_postfix({'loss': total_loss / (total + 1), 'acc': correct / total})
+                pbar.set_postfix({
+                    'loss': total_loss / len(pbar),
+                    'acc': correct / total if total > 0 else 0.0
+                })
         
         avg_loss = total_loss / len(val_loader)
         accuracy = correct / total
@@ -92,7 +98,7 @@ class BaselineTrainer:
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='max', factor=0.5, patience=5, verbose=True
+            optimizer, mode='max', factor=0.5, patience=5
         )
         
         print(f"\nStarting baseline training for {num_epochs} epochs...")

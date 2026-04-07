@@ -5,6 +5,7 @@
 # and data augmentations
 
 import os
+import shutil
 import torch
 import torchvision.transforms as transforms
 from torchvision.datasets import Food101
@@ -75,12 +76,35 @@ class Food101Dataset(torch.utils.data.Dataset):
         # Note: Food101 from torchvision uses 'train' and 'test' splits
         # We'll use train for training and val, then test for final evaluation
         is_train = (split == 'train')
-        self.dataset = Food101(
-            root=root,
-            split='train' if is_train else 'test',
-            download=download,
-            transform=None  # We'll apply our custom transform
-        )
+        split_name = 'train' if is_train else 'test'
+
+        try:
+            self.dataset = Food101(
+                root=root,
+                split=split_name,
+                download=download,
+                transform=None  # We'll apply our custom transform
+            )
+        except RuntimeError as e:
+            # Handle interrupted/corrupted download by clearing artifacts and retrying once.
+            if download and 'File not found or corrupted' in str(e):
+                archive_path = os.path.join(root, 'food-101.tar.gz')
+                extract_path = os.path.join(root, 'food-101')
+
+                if os.path.exists(archive_path):
+                    os.remove(archive_path)
+                if os.path.exists(extract_path):
+                    shutil.rmtree(extract_path)
+
+                print('Detected corrupted Food-101 download. Retrying with a clean archive...')
+                self.dataset = Food101(
+                    root=root,
+                    split=split_name,
+                    download=True,
+                    transform=None
+                )
+            else:
+                raise
         
         # Get default transform if none provided
         # get_transforms will return different transforms based on the split (train/val/test)

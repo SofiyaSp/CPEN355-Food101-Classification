@@ -23,6 +23,7 @@ pip install -r requirements.txt
 # 3. Test data loader
 cd code
 python data_loader.py --download
+# the --download download the Food101 dataset if it doesnt exist already
 
 # 4. (Optional) Train baseline - takes ~2-3 hours
 python train_baseline.py --download --num-epochs 50
