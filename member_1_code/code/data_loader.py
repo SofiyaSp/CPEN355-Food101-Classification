@@ -170,28 +170,35 @@ def create_data_loaders(
     )
     
     # Create DataLoaders
+    common_loader_kwargs = {
+        'batch_size': batch_size,
+        'num_workers': num_workers,
+        # pin_memory speeds host->GPU transfer for CUDA training.
+        'pin_memory': True,
+    }
+
+    if num_workers > 0:
+        # Keep workers alive between epochs and prefetch batches to hide input-pipeline latency.
+        common_loader_kwargs['persistent_workers'] = True
+        # Queue extra batches ahead of time so the GPU waits less on data.
+        common_loader_kwargs['prefetch_factor'] = 4
+
     train_loader = DataLoader(
         train_dataset,
-        batch_size=batch_size,
         shuffle=True, # shuffle training data for better generalization
-        num_workers=num_workers,
-        pin_memory=True
+        **common_loader_kwargs
     )
     
     val_loader = DataLoader(
         val_dataset,
-        batch_size=batch_size,
         shuffle=False, # no need to shuffle validation data as we won't be training on it
-        num_workers=num_workers,
-        pin_memory=True
+        **common_loader_kwargs
     )
     
     test_loader = DataLoader(
         test_dataset,
-        batch_size=batch_size,
         shuffle=False, # no need to shuffle test data as we won't be training on it
-        num_workers=num_workers,
-        pin_memory=True
+        **common_loader_kwargs
     )
     
     # Dataset info for logging

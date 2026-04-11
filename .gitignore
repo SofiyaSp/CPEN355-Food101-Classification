@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Project Ignores
+data/
+
 # Distribution / packaging
 .Python
 build/

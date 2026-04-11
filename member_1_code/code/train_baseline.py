@@ -8,6 +8,7 @@ from tqdm import tqdm
 import argparse
 from pathlib import Path
 import csv
+from contextlib import nullcontext
 
 from data_loader import create_data_loaders
 from baseline_model import create_baseline_model
@@ -16,11 +17,33 @@ from baseline_model import create_baseline_model
 class BaselineTrainer:
     # Handles training and validation loop
     
-    def __init__(self, model, device, output_dir='./models'):
+    def __init__(
+        self,
+        model,
+        device,
+        output_dir='./models',
+        use_amp=True,
+        use_channels_last=True,
+        compile_model=False
+    ):
         self.model = model
         self.device = device
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.use_amp = use_amp and device.type == 'cuda'
+        self.use_channels_last = use_channels_last and device.type == 'cuda'
+
+        if self.use_channels_last:
+            # NHWC layout often improves convolution throughput on NVIDIA GPUs.
+            self.model = self.model.to(memory_format=torch.channels_last)
+
+        if compile_model and hasattr(torch, 'compile'):
+            # Optional graph capture/fusion for additional speedup on PyTorch 2+.
+            self.model = torch.compile(self.model)
+
+        # Dynamic loss scaling keeps AMP stable while using fast fp16 math.
+        self.scaler = torch.amp.GradScaler('cuda', enabled=self.use_amp)
         
         self.best_val_accuracy = 0.0
         self.train_losses = []
@@ -34,16 +57,24 @@ class BaselineTrainer:
         total = 0
         
         pbar = tqdm(train_loader, desc='Training') # tqdm is a Python library that provides a progress bar for loops. This allows you to visually track the progress of the training loop and see how much of the training data has been processed at any given time.
-        for images, labels in pbar:
-            images = images.to(self.device)
-            labels = labels.to(self.device)
-            
-            outputs = self.model(images)
-            loss = criterion(outputs, labels) #criterion is a loss function
-            
-            optimizer.zero_grad() # Clear the gradients of all optimized parameters before performing the backward pass. 
-            loss.backward()
-            optimizer.step() # Update the model parameters based on the computed gradients
+        for step, (images, labels) in enumerate(pbar, start=1):
+            # non_blocking=True lets host->GPU copies overlap with compute when possible.
+            images = images.to(self.device, non_blocking=True)
+            labels = labels.to(self.device, non_blocking=True)
+            if self.use_channels_last:
+                images = images.to(memory_format=torch.channels_last)
+
+            optimizer.zero_grad(set_to_none=True) # Clear gradients before backward pass.
+
+            # autocast runs most ops in fp16 on Tensor Cores for faster training.
+            amp_ctx = torch.autocast(device_type='cuda', dtype=torch.float16) if self.use_amp else nullcontext()
+            with amp_ctx:
+                outputs = self.model(images)
+                loss = criterion(outputs, labels) #criterion is a loss function
+
+            self.scaler.scale(loss).backward()
+            self.scaler.step(optimizer)
+            self.scaler.update()
             
             # Statistics
             total_loss += loss.item()
@@ -53,7 +84,7 @@ class BaselineTrainer:
             
             # Update the progress bar with the current average loss and accuracy for the epoch.
             pbar.set_postfix({
-                'loss': total_loss / len(pbar),
+                'loss': total_loss / step,
                 'acc': correct / total if total > 0 else 0.0
             })
         
@@ -71,12 +102,17 @@ class BaselineTrainer:
         
         with torch.no_grad():
             pbar = tqdm(val_loader, desc='Validating')
-            for images, labels in pbar:
-                images = images.to(self.device)
-                labels = labels.to(self.device)
-                
-                outputs = self.model(images)
-                loss = criterion(outputs, labels)
+            for step, (images, labels) in enumerate(pbar, start=1):
+                images = images.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
+                if self.use_channels_last:
+                    images = images.to(memory_format=torch.channels_last)
+
+                # Keep evaluation path consistent with training precision/layout.
+                amp_ctx = torch.autocast(device_type='cuda', dtype=torch.float16) if self.use_amp else nullcontext()
+                with amp_ctx:
+                    outputs = self.model(images)
+                    loss = criterion(outputs, labels)
                 
                 total_loss += loss.item()
                 _, predicted = outputs.max(1)
@@ -84,7 +120,7 @@ class BaselineTrainer:
                 total += labels.size(0)
                 
                 pbar.set_postfix({
-                    'loss': total_loss / len(pbar),
+                    'loss': total_loss / step,
                     'acc': correct / total if total > 0 else 0.0
                 })
         
@@ -93,7 +129,7 @@ class BaselineTrainer:
         
         return avg_loss, accuracy
     
-    def train(self, train_loader, val_loader, num_epochs=50, lr=0.001):
+    def train(self, train_loader, val_loader, num_epochs=50, lr=0.001, early_stopping_patience=7):
         # Main training loop
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
@@ -103,6 +139,8 @@ class BaselineTrainer:
         
         print(f"\nStarting baseline training for {num_epochs} epochs...")
         
+        epochs_without_improvement = 0
+
         for epoch in range(num_epochs):
             print(f"\nEpoch {epoch+1}/{num_epochs}")
             
@@ -120,11 +158,19 @@ class BaselineTrainer:
             # Save best model
             if val_acc > self.best_val_accuracy:
                 self.best_val_accuracy = val_acc
+                epochs_without_improvement = 0
                 self.save_checkpoint(epoch, 'best')
                 print(f'Saved best model with val accuracy: {val_acc:.4f}')
+            else:
+                epochs_without_improvement += 1
             
             # Learning rate scheduling
             scheduler.step(val_acc)
+
+            # Stop early once validation plateaus to save unnecessary epochs.
+            if epochs_without_improvement >= early_stopping_patience:
+                print(f"Early stopping triggered after {early_stopping_patience} epochs without improvement.")
+                break
         
         print(f"\nTraining complete! Best validation accuracy: {self.best_val_accuracy:.4f}")
         return self.train_losses, self.val_accuracies
@@ -156,10 +202,14 @@ class BaselineTrainer:
         
         with torch.no_grad():
             for images, labels in tqdm(test_loader, desc='Predicting'):
-                images = images.to(self.device)
-                labels = labels.to(self.device)
-                
-                outputs = self.model(images)
+                images = images.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
+                if self.use_channels_last:
+                    images = images.to(memory_format=torch.channels_last)
+
+                amp_ctx = torch.autocast(device_type='cuda', dtype=torch.float16) if self.use_amp else nullcontext()
+                with amp_ctx:
+                    outputs = self.model(images)
                 confidences, predicted = outputs.max(1)
                 
                 all_predictions.extend(predicted.cpu().numpy().tolist())
@@ -195,15 +245,28 @@ def main():
                         help='Learning rate')
     parser.add_argument('--num-workers', type=int, default=4,
                         help='Number of workers for data loading')
+    parser.add_argument('--amp', action=argparse.BooleanOptionalAction, default=True,
+                        help='Enable mixed precision training (enabled by default on T4)')
+    parser.add_argument('--channels-last', action=argparse.BooleanOptionalAction, default=True,
+                        help='Use channels-last memory format for faster convolutions on GPU (enabled by default)')
+    parser.add_argument('--compile', action='store_true',
+                        help='Use torch.compile for model graph optimization (PyTorch 2+)')
+    parser.add_argument('--early-stop-patience', type=int, default=7,
+                        help='Stop if validation accuracy does not improve for N epochs')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
                         help='Device to use')
     parser.add_argument('--download', action='store_true',
                         help='Download dataset if needed')
+    parser.add_argument('--output-dir', type=str, default='./models',
+                        help='Directory to save checkpoints and prediction CSV')
     args = parser.parse_args()
     
     # Set device
     device = torch.device(args.device)
     print(f"Using device: {device}")
+    if device.type == 'cuda':
+        # For fixed image sizes, cuDNN benchmark picks faster convolution kernels.
+        torch.backends.cudnn.benchmark = True
     
     # Create data loaders
     print("Loading data...")
@@ -220,12 +283,20 @@ def main():
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     
     # Train
-    trainer = BaselineTrainer(model, device, output_dir='./models')
+    trainer = BaselineTrainer(
+        model,
+        device,
+        output_dir=args.output_dir,
+        use_amp=args.amp,
+        use_channels_last=args.channels_last,
+        compile_model=args.compile
+    )
     trainer.train(
         train_loader,
         val_loader,
         num_epochs=args.num_epochs,
-        lr=args.lr
+        lr=args.lr,
+        early_stopping_patience=args.early_stop_patience
     )
     
     # Generate predictions on test set
