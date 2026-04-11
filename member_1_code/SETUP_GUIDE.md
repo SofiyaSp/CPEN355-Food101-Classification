@@ -19,7 +19,26 @@ python data_loader.py --download
 ## Train Baseline (Optional)
 If you have GPU and ~2-3 hours:
 ```bash
-python train_baseline.py --download --num-epochs 50
+python train_baseline.py \
+    --data-root ../data \
+    --download \
+    --batch-size 128 \
+    --num-workers 8 \
+    --num-epochs 30 \
+    --early-stop-patience 5 \
+    --output-dir ../models
+```
+
+Google Colab (save checkpoints to Drive):
+```bash
+python member_1_code/code/train_baseline.py \
+    --data-root /content/food_data \
+    --download \
+    --batch-size 128 \
+    --num-workers 8 \
+    --num-epochs 30 \
+    --early-stop-patience 5 \
+    --output-dir /content/drive/MyDrive/CPEN355/models
 ```
 
 Outputs:
