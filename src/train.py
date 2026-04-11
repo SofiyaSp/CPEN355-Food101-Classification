@@ -2,26 +2,16 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
+from pathlib import Path
+from tqdm import tqdm
 
-# Import the models from our other file
-from models import build_efficientnet, SimpleCNN
+# Import YOUR model architecture
+from models import build_efficientnet
 
-# ==========================================
-# TEMPORARY DUMMY DATA (Member 1 will replace this)
-# Eventually, you will just do: from dataset import get_dataloaders
-# ==========================================
-def get_dataloaders(batch_size=32, num_classes=101):
-    print("Loading Dummy Data...")
-    X_train = torch.randn(batch_size * 5, 3, 224, 224)
-    y_train = torch.randint(0, num_classes, (batch_size * 5,))
-    X_val = torch.randn(batch_size * 2, 3, 224, 224)
-    y_val = torch.randint(0, num_classes, (batch_size * 2,))
-    
-    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=batch_size, shuffle=False)
-    return train_loader, val_loader
+# Import MEMBER 1's Data Loader and Constants
+from data_loader import create_data_loaders
+import config
 
 # ==========================================
 # TRAINING LOGIC (Member 2's Domain)
@@ -36,80 +26,122 @@ def train_model(model, train_loader, val_loader, optimizer, device, epochs=3, sa
         model.train()
         running_loss = 0.0
         
-        # ... (keep your existing training loop code here) ...
-        for inputs, labels in train_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            optimizer.zero_grad()
+        # We add tqdm here to see the progress bar just like Member 1 did!
+        pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{epochs} [Train]')
+        for inputs, labels in pbar:
+            inputs, labels = inputs.to(device, non_blocking=True), labels.to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
+            
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
             
+            pbar.set_postfix({'loss': loss.item()})
+            
         scheduler.step()
         
-        # ... (keep your existing validation loop code here) ...
+        # Validation
         model.eval()
         correct, total = 0, 0
         with torch.no_grad():
-            for inputs, labels in val_loader:
-                inputs, labels = inputs.to(device), labels.to(device)
+            for inputs, labels in tqdm(val_loader, desc=f'Epoch {epoch+1}/{epochs} [Val]'):
+                inputs, labels = inputs.to(device, non_blocking=True), labels.to(device, non_blocking=True)
                 outputs = model(inputs)
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
                 
         val_acc = 100 * correct / total
-        print(f"Epoch {epoch+1}/{epochs} | Loss: {running_loss/len(train_loader):.4f} | Val Acc: {val_acc:.2f}%")
+        print(f"--> Epoch {epoch+1} Summary | Loss: {running_loss/len(train_loader):.4f} | Val Acc: {val_acc:.2f}%")
         
         # SAVE THE BEST MODEL
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), f"{save_name}.pth")
-            print(f"--> Saved new best model with accuracy: {best_val_acc:.2f}%")
+            save_path = config.MODELS_ROOT / f"{save_name}.pth"
+            torch.save(model.state_dict(), save_path)
+            print(f"--> Saved new best model to {save_path} with accuracy: {best_val_acc:.2f}%\n")
 
-def generate_outputs(model, val_loader, device, model_name):
-    torch.save(model.state_dict(), f"{model_name}.pth")
-    
+
+def generate_outputs(model, test_loader, device, output_csv_name="efficientnet_predictions.csv"):
     model.eval()
     all_preds, all_labels = [], []
+    
+    print("\nGenerating final test set predictions for Member 3...")
     with torch.no_grad():
-        for inputs, labels in val_loader:
-            inputs = inputs.to(device)
+        for inputs, labels in tqdm(test_loader, desc='Predicting'):
+            inputs = inputs.to(device, non_blocking=True)
             outputs = model(inputs)
             _, predicted = torch.max(outputs, 1)
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             
-    df = pd.DataFrame({"True_Label": all_labels, "Predicted_Label": all_preds})
-    df.to_csv(f"{model_name}_predictions.csv", index=False)
-    print(f"Saved {model_name}.pth and {model_name}_predictions.csv\n")
+    # Save the predictions exactly where Member 1's config says they should go
+    output_path = config.MODELS_ROOT / output_csv_name
+    df = pd.DataFrame({"true_label": all_labels, "predicted_label": all_preds})
+    df.to_csv(output_path, index=False)
+    print(f"Predictions successfully saved to {output_path}")
+
 
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
 if __name__ == "__main__":
+    # 1. Setup Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}\n")
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
     
-    train_loader, val_loader = get_dataloaders()
+    # 2. Load the REAL Data using Member 1's function
+    print("Loading real Food-101 Dataset...")
+    train_loader, val_loader, test_loader, dataset_info = create_data_loaders(
+        data_root=config.DATA_ROOT,
+        batch_size=config.EFFICIENTNET_BATCH_SIZE,
+        num_workers=config.NUM_WORKERS,
+        download=True # Safely downloads the data if you are in Colab and don't have it yet
+    )
 
-    # --- 1. Train Baseline CNN ---
-    print("--- Training Baseline CNN ---")
-    baseline_model = SimpleCNN().to(device)
-    optimizer_base = optim.Adam(baseline_model.parameters(), lr=1e-3)
-    train_model(baseline_model, train_loader, val_loader, optimizer_base, device, epochs=3, save_name="baseline_cnn_best")
-    generate_outputs(baseline_model, val_loader, device, "baseline_cnn_final")
-
-    # --- 2. Train EfficientNet ---
-    print("--- Training EfficientNet (Head Only) ---")
-    eff_model = build_efficientnet().to(device)
-    optimizer_eff = optim.Adam(eff_model.classifier.parameters(), lr=1e-3)
-    train_model(eff_model, train_loader, val_loader, optimizer_eff, device, epochs=3, save_name="efficientnet_head_best")
+    # 3. Create the EfficientNet Model
+    print("\n--- Initializing EfficientNet ---")
+    eff_model = build_efficientnet(num_classes=config.NUM_CLASSES).to(device)
     
-    print("--- Fine-Tuning EfficientNet (Deeper Layers) ---")
+    # 4. Train just the Classification Head
+    print(f"\n--- Phase 1: Training EfficientNet (Head Only) for {config.EFFICIENTNET_UNFREEZE_EPOCH} epochs ---")
+    optimizer_eff = optim.Adam(eff_model.classifier.parameters(), lr=config.EFFICIENTNET_LR)
+    train_model(
+        eff_model, train_loader, val_loader, optimizer_eff, device, 
+        epochs=config.EFFICIENTNET_UNFREEZE_EPOCH, 
+        save_name="efficientnet_head_best"
+    )
+    
+    # 5. Fine-Tune the Deeper Layers
+    print("\n--- Phase 2: Fine-Tuning EfficientNet (Deeper Layers) ---")
+    
+    # Reload the absolute best weights from the Head training phase before we unfreeze
+    head_best_path = config.MODELS_ROOT / "efficientnet_head_best.pth"
+    eff_model.load_state_dict(torch.load(head_best_path, map_location=device))
+    
+    # Unfreeze the last block
     for param in eff_model.features[7].parameters():
         param.requires_grad = True
+        
+    # Use a much smaller learning rate for fine-tuning
     optimizer_ft = optim.Adam(filter(lambda p: p.requires_grad, eff_model.parameters()), lr=1e-5)
-    train_model(eff_model, train_loader, val_loader, optimizer_ft, device, epochs=2, save_name="efficientnet_finetuned_best")
-    generate_outputs(eff_model, val_loader, device, "efficientnet_final")
+    
+    # Train for the remaining epochs
+    remaining_epochs = config.EFFICIENTNET_EPOCHS - config.EFFICIENTNET_UNFREEZE_EPOCH
+    train_model(
+        eff_model, train_loader, val_loader, optimizer_ft, device, 
+        epochs=remaining_epochs, 
+        save_name="efficientnet_best"
+    )
+    
+    # 6. Generate Outputs for Member 3 on the TEST loader (Not the validation loader!)
+    
+    # Reload the absolute best weights from fine-tuning
+    final_best_path = config.MODELS_ROOT / "efficientnet_best.pth"
+    eff_model.load_state_dict(torch.load(final_best_path, map_location=device))
+    
+    generate_outputs(eff_model, test_loader, device, output_csv_name="efficientnet_predictions.csv")
