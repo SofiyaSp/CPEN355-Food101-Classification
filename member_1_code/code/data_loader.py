@@ -106,6 +106,31 @@ class Food101Dataset(torch.utils.data.Dataset):
             else:
                 raise
         
+        # Build a list of valid indices (skip missing files)
+        # Food101 uses a different structure, so we'll validate by trying to access each sample
+        # Skip expensive validation for test sets as we'll handle missing files gracefully in __getitem__
+        self.valid_indices = []
+        self.missing_files = []
+        
+        if split == 'train':
+            # For training, validate all indices to catch issues early
+            for idx in range(len(self.dataset)):
+                try:
+                    # Try to access the image without transform to check if file exists
+                    image, label = self.dataset[idx]
+                    self.valid_indices.append(idx)
+                except (FileNotFoundError, OSError, Exception) as e:
+                    # Skip corrupted or missing files
+                    self.missing_files.append(f"Index {idx}: {type(e).__name__}")
+            
+            if self.missing_files:
+                print(f"Warning: {len(self.missing_files)} missing/invalid files found in {split} set")
+                print(f"Valid samples: {len(self.valid_indices)} / {len(self.dataset)}")
+        else:
+            # For test/val sets, just use all indices and handle errors in __getitem__
+            # This avoids expensive validation on large prediction sets
+            self.valid_indices = list(range(len(self.dataset)))
+        
         # Get default transform if none provided
         # get_transforms will return different transforms based on the split (train/val/test)
         # a transform is a function that takes in an image and applies a series of operations to it, such as resizing, cropping, flipping, color jittering, converting to tensor, and normalizing.
@@ -114,17 +139,28 @@ class Food101Dataset(torch.utils.data.Dataset):
             transform = get_transforms(split=split, image_size=image_size)
         self.transform = transform
     
-    # The __len__ method returns the total number of samples in the dataset, which is determined by the length of the underlying Food-101 dataset.
+    # The __len__ method returns the total number of valid samples in the dataset (excluding missing files).
     def __len__(self):
-        return len(self.dataset)
+        return len(self.valid_indices)
     
-    # The __getitem__ method retrieves an image and its corresponding label from the underlying Food-101 dataset using the provided index (idx). 
+    # The __getitem__ method retrieves an image and its corresponding label from the underlying Food-101 dataset using the valid index. 
     # If a transform is defined, it applies the transform to the image before returning it along with the label.
     def __getitem__(self, idx):
-        image, label = self.dataset[idx]
-        if self.transform:
-            image = self.transform(image)
-        return image, label
+        # Map from valid index to actual dataset index
+        actual_idx = self.valid_indices[idx]
+        try:
+            image, label = self.dataset[actual_idx]
+            if self.transform:
+                image = self.transform(image)
+            return image, label
+        except (FileNotFoundError, OSError) as e:
+            # If a file is corrupted/missing, create a black placeholder image
+            print(f"Corrupted file at index {actual_idx}, returning placeholder image")
+            # Create a black placeholder image (224x224 RGB)
+            image = Image.new('RGB', (self.image_size, self.image_size), color='black')
+            if self.transform:
+                image = self.transform(image)
+            return image, -1  # Return -1 as placeholder label
 
 
 def create_data_loaders(
@@ -198,7 +234,9 @@ def create_data_loaders(
     test_loader = DataLoader(
         test_dataset,
         shuffle=False, # no need to shuffle test data as we won't be training on it
-        **common_loader_kwargs
+        batch_size=batch_size,
+        num_workers=0,  # Use 0 workers to avoid multiprocessing issues with corrupted files
+        pin_memory=True,
     )
     
     # Dataset info for logging
