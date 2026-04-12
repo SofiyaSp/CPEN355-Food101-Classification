@@ -18,15 +18,16 @@ import config
 # ==========================================
 def train_model(model, train_loader, val_loader, optimizer, device, epochs=3, save_name="best_model"):
     criterion = nn.CrossEntropyLoss()
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.1)
     
-    best_val_acc = 0.0 # Track the best accuracy
+    # Change 1: Use ReduceLROnPlateau instead of StepLR
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
+    
+    best_val_acc = 0.0 
     
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
         
-        # We add tqdm here to see the progress bar just like Member 1 did!
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{epochs} [Train]')
         for inputs, labels in pbar:
             inputs, labels = inputs.to(device, non_blocking=True), labels.to(device, non_blocking=True)
@@ -40,8 +41,6 @@ def train_model(model, train_loader, val_loader, optimizer, device, epochs=3, sa
             
             pbar.set_postfix({'loss': loss.item()})
             
-        scheduler.step()
-        
         # Validation
         model.eval()
         correct, total = 0, 0
@@ -55,6 +54,9 @@ def train_model(model, train_loader, val_loader, optimizer, device, epochs=3, sa
                 
         val_acc = 100 * correct / total
         print(f"--> Epoch {epoch+1} Summary | Loss: {running_loss/len(train_loader):.4f} | Val Acc: {val_acc:.2f}%")
+        
+        # Change 2: Step the scheduler using the validation accuracy!
+        scheduler.step(val_acc)
         
         # SAVE THE BEST MODEL
         if val_acc > best_val_acc:
