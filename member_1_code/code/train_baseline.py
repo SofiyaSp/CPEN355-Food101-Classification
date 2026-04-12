@@ -259,6 +259,12 @@ def main():
                         help='Download dataset if needed')
     parser.add_argument('--output-dir', type=str, default='./models',
                         help='Directory to save checkpoints and prediction CSV')
+    parser.add_argument('--checkpoint-path', type=str, default=None,
+                        help='Optional checkpoint (.pth) to load before prediction or resume workflows')
+    parser.add_argument('--predict-only', action='store_true',
+                        help='Skip training and only generate predictions from a loaded checkpoint')
+    parser.add_argument('--output-csv', type=str, default='baseline_predictions.csv',
+                        help='Prediction CSV filename written under --output-dir')
     args = parser.parse_args()
     
     # Set device
@@ -291,16 +297,25 @@ def main():
         use_channels_last=args.channels_last,
         compile_model=args.compile
     )
-    trainer.train(
-        train_loader,
-        val_loader,
-        num_epochs=args.num_epochs,
-        lr=args.lr,
-        early_stopping_patience=args.early_stop_patience
-    )
+
+    if args.checkpoint_path:
+        trainer.load_checkpoint(args.checkpoint_path)
+
+    if not args.predict_only:
+        trainer.train(
+            train_loader,
+            val_loader,
+            num_epochs=args.num_epochs,
+            lr=args.lr,
+            early_stopping_patience=args.early_stop_patience
+        )
+    else:
+        if not args.checkpoint_path:
+            raise ValueError('--predict-only requires --checkpoint-path to be set')
+        print('Predict-only mode: skipping training.')
     
     # Generate predictions on test set
-    trainer.generate_predictions(test_loader, output_csv='baseline_predictions.csv')
+    trainer.generate_predictions(test_loader, output_csv=args.output_csv)
     
     print("\nBaseline training complete!")
 
