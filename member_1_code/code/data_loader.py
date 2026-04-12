@@ -198,9 +198,7 @@ def create_data_loaders(
     test_loader = DataLoader(
         test_dataset,
         shuffle=False, # no need to shuffle test data as we won't be training on it
-        batch_size=batch_size,
-        num_workers=0,  # Use 0 workers to avoid multiprocessing issues with corrupted files
-        pin_memory=True,
+        **common_loader_kwargs
     )
     
     # Dataset info for logging
