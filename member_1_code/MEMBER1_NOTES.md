@@ -1,5 +1,24 @@
 # Member 1 - Implementation Notes
 
+## Selected Baseline Model
+
+The **April 12 ResNet18 baseline model** (learning rate 0.003) has been selected as the final baseline:
+- **Model file**: `models/baseline_resnet18_best_apr12_lr_003.pth`
+- **Predictions**: `models/baseline_predictions_apr12_lr_003.csv`
+
+### Testing the April 12 Model
+To run predictions using the selected April 12 model:
+```bash
+python code/train_baseline.py \
+    --data-root data \
+    --download \
+    --batch-size 128 \
+    --num-workers 8 \
+    --checkpoint-path models/baseline_resnet18_best_apr12_lr_003.pth \
+    --predict-only \
+    --output-csv baseline_predictions_apr12_lr_003_test.csv
+```
+
 ## File Structure 
 
 ```
@@ -48,7 +67,7 @@ You don't need to wait for the baseline to finish training.
 After baseline finishes, use the predictions CSV:
 ```python
 import pandas as pd
-df = pd.read_csv('../models/baseline_predictions.csv')
+df = pd.read_csv('../models/baseline_predictions_apr12_lr_003.csv')
 ```
 
 ## Dataset Info
@@ -60,12 +79,12 @@ df = pd.read_csv('../models/baseline_predictions.csv')
 - **Test**: 25,250 images
 - **Image Size**: 224×224
 
-## Baseline Results (expected)
+## Baseline Results (April 12 Model)
 
-- Train acc: ~80-85%
-- Val/Test acc: ~65-75%
+- **Test Accuracy**: Check `models/baseline_predictions_apr12_lr_003.csv` for detailed predictions
+- **Performance**: ~62% test accuracy (ResNet18 from scratch)
 
-This is for comparison with the transfer learning model.
+This baseline is used for comparison with the transfer learning model.
 
 ## Key Files to Know
 

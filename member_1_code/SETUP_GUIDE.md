@@ -16,7 +16,24 @@ cd code
 python data_loader.py --download
 ```
 
-## Train Baseline (Optional)
+## Test the Selected April 12 Baseline Model
+To evaluate the pre-trained April 12 baseline model on test data:
+
+```bash
+cd code
+python train_baseline.py \
+    --data-root ../data \
+    --download \
+    --batch-size 128 \
+    --num-workers 8 \
+    --checkpoint-path ../models/baseline_resnet18_best_apr12_lr_003.pth \
+    --predict-only \
+    --output-csv baseline_predictions_apr12_lr_003_test.csv
+```
+
+This will load the April 12 model, skip training, and generate predictions on the test set. The output CSV will be saved to `../models/baseline_predictions_apr12_lr_003_test.csv`.
+
+## Train a New Baseline (Optional)
 If you have GPU and ~2-3 hours:
 ```bash
 python train_baseline.py \
@@ -26,6 +43,7 @@ python train_baseline.py \
     --num-workers 8 \
     --num-epochs 30 \
     --early-stop-patience 5 \
+    --lr 0.003 \
     --output-dir ../models
 ```
 
@@ -38,6 +56,7 @@ python member_1_code/code/train_baseline.py \
     --num-workers 8 \
     --num-epochs 30 \
     --early-stop-patience 5 \
+    --lr 0.003 \
     --output-dir /content/drive/MyDrive/CPEN355/models
 ```
 
