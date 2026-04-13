@@ -69,22 +69,6 @@ source venv/bin/activate  # On Windows use: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## How to Reproduce Results
-We strongly recommend running this code in an environment with GPU acceleration (such as Google Colab with a T4 GPU). The random seed is fixed at 42 across all scripts for full reproducibility.
-
-### 1. Train the Baseline ResNet18
-To train the baseline model from scratch for 60 epochs, ensure you are in the root directory and run:
-```bash
-python member_1_code/code/train_baseline.py \
-  --data-root data \
-  --download \
-  --batch-size 128 \
-  --num-workers 8 \
-  --num-epochs 60 \
-  --early-stop-patience 5 \
-  --output-dir member_1_code/models
-```
-
 ### 2. Train the EfficientNet-B0
 To run our advanced two-phase transfer learning pipeline, execute our main training script. This automatically handles Phase 1 (training the classification head) and Phase 2 (unfreezing the top 3 feature blocks with learning rate decay) for a total of 50 epochs:
 ```bash
