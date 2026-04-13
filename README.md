@@ -59,7 +59,7 @@ python member_1_code/code/train_baseline.py \
   --batch-size 128 \
   --num-workers 8 \
   --num-epochs 60 \
-  --early-stop-patience 5 \
+  --early-stop-patience 12 \
   --output-dir member_1_code/models
 ```
 
