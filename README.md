@@ -77,10 +77,13 @@ python member_1_code/code/train.py
 *(This script relies on `member_1_code/code/config.py` for hyperparameters and saves `efficientnet_predictions.csv` directly into the `member_1_code/models/` directory).*
 
 ### 3. Evaluate the Results
-Once both models have generated their prediction CSVs in the models folder, run the evaluation script to calculate the final metrics (Accuracy, Macro-F1, Precision, Recall) and generate the confusion matrix:
+Once both models have generated their prediction CSVs in the models folder, run the evaluation script to calculate the final metrics (Accuracy, Macro-F1, Precision, Recall) and generate the confusion matrix. Note that the current evaluation script points to 2 CSV files, `member_1_code/models/baseline_predictions_apr12_lr_003.csv` and `member_1_code/models/efficientnet_predictions.csv`:
 ```bash
 python src/evaluation/evaluate.py
 ```
+This will place results in the `src/evalulation/results` directory, which includes a CSV and png image of the confusion matrix, CSV with top misclassifications, a bar chart and CSV summary comparing the metrics of the two models.
+
+The report is found at `CPEN355_final_project_group_20_report.pdf`.
 
 ## Troubleshooting
 - **CUDA out of memory:** If your GPU runs out of VRAM, reduce the batch size in the training command (e.g., `--batch-size 32` or update `config.py`).
