@@ -1,9 +1,6 @@
 # CPEN 355 Final Project: Food-101 Image Classification
 
 ## Team Members
-- Jasia Azreen (90739129)
-- John Song (12837472)
-- Sofiya Spolitak (69202497)
 
 ## Overview
 This repository contains the code for our CPEN 355 final project. We implemented an automated image classification system using the Food-101 dataset to categorize diverse food images into 101 distinct meal classes. Our approach utilizes transfer learning via an EfficientNet backbone compared against a baseline simple CNN. 
@@ -82,17 +79,13 @@ python member_1_code/code/train_baseline.py \
   --output-dir /content/drive/MyDrive/CPEN355/models
 ```
 
-### 3. Legacy Script (root src)
+2. **Legacy script (root src):** To run the older combined training loop for both baseline CNN and EfficientNet, execute:
+   ```bash
+   python src/train.py
+   ```
+   *Note: This path is legacy and may not match member_1_code outputs.*
 
-To run the older combined training loop for both baseline CNN and EfficientNet, execute:
-```bash
-python src/train.py
-```
-*Note: This path is legacy and may not match member_1_code outputs.*
-
-### 4. Evaluate the Results
-
-To generate the evaluation metrics (Accuracy, Macro-F1, Precision, Recall) and output the confusion matrix, execute:
-```bash
-python src/evaluate.py
-```
+3. **Evaluate the Results:** To generate the evaluation metrics (Accuracy, Macro-F1, Precision, Recall) and output the confusion matrix, execute:
+   ```bash
+   python src/evaluate.py
+   ```
