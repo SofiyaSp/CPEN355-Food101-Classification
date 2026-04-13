@@ -125,15 +125,18 @@ if __name__ == "__main__":
     head_best_path = config.MODELS_ROOT / "efficientnet_head_best.pth"
     eff_model.load_state_dict(torch.load(head_best_path, map_location=device))
     
-    # Unfreeze the last block
-    for param in eff_model.features[7].parameters():
-        param.requires_grad = True
-        
-    # Use a much smaller learning rate for fine-tuning
-    optimizer_ft = optim.Adam(filter(lambda p: p.requires_grad, eff_model.parameters()), lr=1e-5)
+    # TUNING CHANGE: Unfreeze the top 3 blocks instead of just 1!
+    # EfficientNet-B0's features go from 0 to 7. We unfreeze 5, 6, and 7.
+    for block in eff_model.features[5:]:
+        for param in block.parameters():
+            param.requires_grad = True
+            
+    # TUNING CHANGE: Lower learning rate for fine-tuning to prevent destroying the pretrained weights
+    optimizer_ft = optim.Adam(filter(lambda p: p.requires_grad, eff_model.parameters()), lr=1e-4)
     
-    # Train for the remaining epochs
+    # We still use ReduceLROnPlateau, but it will aggressively cut the LR if it plateaus
     remaining_epochs = config.EFFICIENTNET_EPOCHS - config.EFFICIENTNET_UNFREEZE_EPOCH
+    
     train_model(
         eff_model, train_loader, val_loader, optimizer_ft, device, 
         epochs=remaining_epochs, 
